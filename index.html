@@ -46,6 +46,13 @@
   #cartSummary b{color:var(--green)}
   #copyOrder{background:var(--red); color:#fff; border:none; padding:12px 22px; border-radius:10px; font-size:1rem; font-weight:700; cursor:pointer}
   #copyOrder:hover{filter:brightness(1.1)}
+  .linkbtn{background:none; border:none; color:var(--gold); font-size:.8rem; cursor:pointer; padding:2px 0; text-decoration:underline}
+  #cartPanel{background:#fff; border:2px solid var(--green); border-radius:12px; padding:12px; width:100%; max-height:260px; overflow-y:auto; font-size:.88rem}
+  #cartPanel .pline{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #eee}
+  #cartPanel .pname{flex:1}
+  #cartPanel button.q{width:30px; height:30px; border:1px solid var(--green); background:#fff; color:var(--green); border-radius:7px; cursor:pointer; font-weight:700}
+  #cartPanel button.x{border:1px solid var(--red); background:#fff; color:var(--red); border-radius:7px; width:34px; height:30px; cursor:pointer}
+  #cartPanel .clearall{background:none; border:none; color:var(--muted); cursor:pointer; text-decoration:underline; font-size:.78rem; margin-top:6px}
   #orderText{display:none; width:100%; margin-top:10px; font-family:monospace; font-size:.8rem; padding:8px}
   .hint{font-size:.78rem; color:var(--muted)}
   footer{max-width:1100px; margin:30px auto 20px; padding:0 16px; color:var(--muted); font-size:.75rem; line-height:1.6}
@@ -308,7 +315,11 @@
 
 <div class="cartbar">
   <div class="inner">
-    <div id="cartSummary">Your order is empty &mdash; tick a few things and they'll show here &#127876;</div>
+    <div>
+      <div id="cartSummary">Your order is empty &mdash; tick a few things and they'll show here &#127876;</div>
+      <button id="editCart" style="display:none" class="linkbtn">&#9998; View / change your order</button>
+    </div>
+    <div id="cartPanel" style="display:none"></div>
     <div class="custfields">
       <input id="custName" type="text" placeholder="Your name" autocomplete="name">
       <input id="custAddr" type="text" placeholder="Delivery address (or type PICKUP)" autocomplete="street-address">
@@ -328,7 +339,18 @@ var cart = {};
 var PIECE_IDS = ["MHBHBROW03","MHBHBROW07","MHBHBROW09","MHBHBROW11","MHBHSLICE01"];
 var PIECE_PRICES = {"MHBHBROW03":6.95,"MHBHBROW07":6.95,"MHBHBROW09":7.95,"MHBHBROW11":6.95,"MHBHSLICE01":6.75};
 
+var TALLY_URL = "";  // paste your Apps Script web app URL here once deployed
+
 function money(n){ return "$" + n.toFixed(2); }
+
+function bump(id, delta){
+  if (!cart[id]) return;
+  cart[id].qty += delta;
+  if (cart[id].qty <= 0) delete cart[id];
+  render();
+}
+function removeLine(id){ delete cart[id]; render(); }
+function clearAll(){ cart = {}; render(); }
 
 document.querySelectorAll("button.add").forEach(function(b){
   b.addEventListener("click", function(){
@@ -385,15 +407,42 @@ function render(){
   }
   var total = subtotal + delivery;
   var el = document.getElementById("cartSummary");
+  var editBtn = document.getElementById("editCart");
   if (!keys.length){
     el.innerHTML = "Your order is empty &mdash; tick a few things and they'll show here &#127876;";
+    editBtn.style.display = "none";
+    document.getElementById("cartPanel").style.display = "none";
   } else {
+    editBtn.style.display = "inline";
     var txt = lines.map(function(l){ return l.it.qty + "x " + l.it.name + " = " + money(l.it.qty * l.it.unit); }).join(" &middot; ");
     if (saved > 0) txt += " &middot; 4-for-$22 deal saves " + money(saved);
     el.innerHTML = txt + "<br><b>Order: " + money(subtotal) + "</b> &nbsp; " + delLabel + " &nbsp; <b>Total: " + money(total) + "</b>";
   }
   buildOrderText(keys, subtotal, saved, delivery, delLabel, total);
+  renderPanel(keys, saved);
 }
+
+function renderPanel(keys, saved){
+  var p = document.getElementById("cartPanel");
+  if (p.style.display === "none") return;
+  var h = "";
+  keys.forEach(function(k){
+    var it = cart[k];
+    h += '<div class="pline"><span class="pname">' + it.qty + ' &times; ' + it.name + '</span>'
+      + '<button class="q" onclick="bump(\'' + k + '\',-1)">&minus;</button>'
+      + '<button class="q" onclick="bump(\'' + k + '\',1)">+</button>'
+      + '<button class="x" onclick="removeLine(\'' + k + '\')" title="Remove">&times;</button></div>';
+  });
+  if (saved > 0) h += '<div style="color:var(--green); padding-top:6px">4-for-$22 deal saving you ' + money(saved) + '</div>';
+  h += '<button class="clearall" onclick="clearAll()">Remove everything</button>';
+  p.innerHTML = h;
+}
+
+document.getElementById("editCart").addEventListener("click", function(){
+  var p = document.getElementById("cartPanel");
+  p.style.display = (p.style.display === "none") ? "block" : "none";
+  render();
+});
 
 function buildOrderText(keys, subtotal, saved, delivery, delLabel, total){
   var cname = (document.getElementById("custName").value || "").trim();
@@ -421,6 +470,12 @@ document.getElementById("copyOrder").addEventListener("click", function(){
   ta.select();
   try { document.execCommand("copy"); } catch(e){}
   if (navigator.clipboard && window.__orderText){ navigator.clipboard.writeText(window.__orderText).catch(function(){}); }
+  // background tally for admin (fires when TALLY_URL is set)
+  if (TALLY_URL && window.__orderText){
+    try {
+      fetch(TALLY_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: window.__orderText}).catch(function(){});
+    } catch(e){}
+  }
   this.textContent = "Copied! Paste it to us";
   var btn = this;
   setTimeout(function(){ btn.textContent = "Copy my order"; }, 2500);
